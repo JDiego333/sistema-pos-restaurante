@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ShoppingCart, FileText, Plus, Trash2, Edit, Search, AlertCircle, DollarSign, TrendingDown } from 'lucide-react';
+import { Package, ShoppingCart, FileText, Plus, Trash2, Edit, Search, AlertCircle, DollarSign, TrendingDown, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 
 const RestaurantPOS = () => {
   const [activeTab, setActiveTab] = useState('inventory');
@@ -29,7 +29,6 @@ const RestaurantPOS = () => {
       if (productsData) {
         setProducts(JSON.parse(productsData));
       } else {
-        // Datos de ejemplo
         const sampleProducts = [
           { id: 1, name: 'Hamburguesa Clásica', category: 'Comida', price: 25000, stock: 50, minStock: 10 },
           { id: 2, name: 'Pizza Margarita', category: 'Comida', price: 35000, stock: 30, minStock: 8 },
@@ -99,12 +98,16 @@ const RestaurantPOS = () => {
     }
 
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const tax = subtotal * 0.19; // IVA 19%
+    const tax = subtotal * 0.19;
     const total = subtotal + tax;
 
+    // MEJORA: Guardamos la fecha en formato ISO para poder filtrar después
+    const now = new Date();
     const invoice = {
       id: Date.now(),
-      date: new Date().toLocaleString('es-CO'),
+      date: now.toLocaleString('es-CO'),
+      dateISO: now.toISOString(), // NUEVO: Fecha en formato estándar para filtros
+      dateOnly: now.toISOString().split('T')[0], // NUEVO: Solo la fecha (YYYY-MM-DD)
       client: clientName || 'Cliente General',
       items: cart,
       subtotal,
@@ -112,7 +115,6 @@ const RestaurantPOS = () => {
       total
     };
 
-    // Actualizar inventario
     const updatedProducts = products.map(product => {
       const cartItem = cart.find(item => item.id === product.id);
       if (cartItem) {
@@ -159,7 +161,7 @@ const RestaurantPOS = () => {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Tabs - AGREGAMOS LA NUEVA PESTAÑA DE REPORTES */}
         <div className="flex gap-2 mb-6 flex-wrap">
           <button
             onClick={() => setActiveTab('inventory')}
@@ -183,6 +185,20 @@ const RestaurantPOS = () => {
             <DollarSign className="w-5 h-5" />
             Facturación
           </button>
+          
+          {/* NUEVA PESTAÑA: REPORTES */}
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'reports' 
+                ? 'bg-orange-600 text-white shadow-lg' 
+                : 'bg-white text-gray-700 hover:bg-orange-100'
+            }`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            Reportes
+          </button>
+
           <button
             onClick={() => setActiveTab('history')}
             className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
@@ -226,6 +242,11 @@ const RestaurantPOS = () => {
           />
         )}
 
+        {/* NUEVO COMPONENTE: REPORTES */}
+        {activeTab === 'reports' && (
+          <ReportsTab invoices={invoices} products={products} />
+        )}
+
         {activeTab === 'history' && (
           <HistoryTab invoices={invoices} />
         )}
@@ -234,7 +255,195 @@ const RestaurantPOS = () => {
   );
 };
 
-// Componente de Inventario
+// ====== NUEVO COMPONENTE: REPORTES DE VENTAS ======
+const ReportsTab = ({ invoices, products }) => {
+  // Estado para la fecha seleccionada (por defecto hoy)
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Filtrar facturas por la fecha seleccionada
+  const filteredInvoices = invoices.filter(inv => inv.dateOnly === selectedDate);
+  
+  // Calcular total de ventas del día
+  const totalSales = filteredInvoices.reduce((sum, inv) => sum + inv.total, 0);
+  const totalInvoices = filteredInvoices.length;
+  const totalItems = filteredInvoices.reduce((sum, inv) => 
+    sum + inv.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
+  );
+
+  // Calcular productos más vendidos del día
+  const productSales = {};
+  filteredInvoices.forEach(invoice => {
+    invoice.items.forEach(item => {
+      if (productSales[item.name]) {
+        productSales[item.name].quantity += item.quantity;
+        productSales[item.name].total += item.price * item.quantity;
+      } else {
+        productSales[item.name] = {
+          name: item.name,
+          quantity: item.quantity,
+          total: item.price * item.quantity
+        };
+      }
+    });
+  });
+
+  // Convertir a array y ordenar por cantidad vendida
+  const topProducts = Object.values(productSales)
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5);
+
+  // Obtener fechas únicas de todas las facturas para el selector
+  const availableDates = [...new Set(invoices.map(inv => inv.dateOnly))].sort().reverse();
+
+  return (
+    <div className="space-y-6">
+      {/* Selector de Fecha */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <Calendar className="w-6 h-6" />
+            Reportes de Ventas
+          </h2>
+          <div className="flex items-center gap-3">
+            <label className="font-semibold text-gray-700">Fecha:</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-4 py-2 border-2 border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+
+        {/* Selector rápido de fechas disponibles */}
+        {availableDates.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-gray-600">Fechas con ventas:</span>
+            {availableDates.slice(0, 7).map(date => (
+              <button
+                key={date}
+                onClick={() => setSelectedDate(date)}
+                className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                  selectedDate === date
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-orange-100'
+                }`}
+              >
+                {new Date(date + 'T00:00:00').toLocaleDateString('es-CO', { 
+                  day: '2-digit', 
+                  month: 'short' 
+                })}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Tarjetas de Estadísticas */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Total Ventas */}
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold opacity-90">Total Ventas</h3>
+            <DollarSign className="w-8 h-8 opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">${totalSales.toLocaleString('es-CO')}</p>
+          <p className="text-sm opacity-80 mt-2">{selectedDate}</p>
+        </div>
+
+        {/* Número de Facturas */}
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold opacity-90">Facturas</h3>
+            <FileText className="w-8 h-8 opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{totalInvoices}</p>
+          <p className="text-sm opacity-80 mt-2">Transacciones realizadas</p>
+        </div>
+
+        {/* Productos Vendidos */}
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold opacity-90">Productos</h3>
+            <Package className="w-8 h-8 opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{totalItems}</p>
+          <p className="text-sm opacity-80 mt-2">Unidades vendidas</p>
+        </div>
+      </div>
+
+      {/* Productos Más Vendidos */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <TrendingUp className="w-6 h-6 text-orange-600" />
+          Top 5 Productos del Día
+        </h3>
+        {topProducts.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No hay ventas para esta fecha</p>
+        ) : (
+          <div className="space-y-3">
+            {topProducts.map((product, index) => (
+              <div key={product.name} className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-orange-300 transition-all">
+                <div className="flex-shrink-0 w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                  <span className="text-orange-600 font-bold text-lg">#{index + 1}</span>
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-gray-800">{product.name}</h4>
+                  <p className="text-sm text-gray-600">{product.quantity} unidades vendidas</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-orange-600">
+                    ${product.total.toLocaleString('es-CO')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Lista de Facturas del Día */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4">
+          Detalle de Facturas ({filteredInvoices.length})
+        </h3>
+        {filteredInvoices.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No hay facturas para esta fecha</p>
+        ) : (
+          <div className="space-y-3">
+            {filteredInvoices.map(invoice => (
+              <div key={invoice.id} className="border-2 border-gray-200 rounded-lg p-4 hover:border-orange-300 transition-all">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="font-bold text-gray-800">Factura #{invoice.id}</h4>
+                    <p className="text-sm text-gray-600">{invoice.date}</p>
+                    <p className="text-sm font-semibold text-gray-700">{invoice.client}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-orange-600">
+                      ${invoice.total.toLocaleString('es-CO')}
+                    </p>
+                    <p className="text-sm text-gray-600">{invoice.items.length} producto(s)</p>
+                  </div>
+                </div>
+                <div className="border-t pt-2 mt-2 text-sm text-gray-600">
+                  {invoice.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{item.name} x{item.quantity}</span>
+                      <span className="font-semibold">${(item.price * item.quantity).toLocaleString('es-CO')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Componente de Inventario (sin cambios)
 const InventoryTab = ({ products, searchTerm, setSearchTerm, showProductForm, setShowProductForm, editingProduct, setEditingProduct, addOrUpdateProduct, deleteProduct }) => {
   return (
     <div className="space-y-6">
@@ -327,7 +536,7 @@ const InventoryTab = ({ products, searchTerm, setSearchTerm, showProductForm, se
   );
 };
 
-// Formulario de Producto
+// Rest of components remain the same...
 const ProductForm = ({ editingProduct, onSave, onCancel }) => {
   const [formData, setFormData] = useState(editingProduct || {
     name: '',
@@ -423,7 +632,6 @@ const ProductForm = ({ editingProduct, onSave, onCancel }) => {
   );
 };
 
-// Componente de Facturación
 const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, updateCartQuantity, clientName, setClientName, generateInvoice }) => {
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const tax = subtotal * 0.19;
@@ -431,7 +639,6 @@ const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, upda
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
-      {/* Productos Disponibles */}
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">Productos Disponibles</h2>
         <div className="mb-4">
@@ -442,8 +649,7 @@ const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, upda
               placeholder="Buscar productos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-            />
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
           </div>
         </div>
         <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -451,27 +657,24 @@ const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, upda
             <div
               key={product.id}
               onClick={() => product.stock > 0 && addToCart(product)}
-              className={`border rounded-lg p-3 flex justify-between items-center ${
-                product.stock > 0 
-                  ? 'cursor-pointer hover:bg-orange-50 border-gray-200' 
-                  : 'bg-gray-100 border-gray-300 opacity-50'
-              }`}
-            >
-              <div>
-                <h3 className="font-semibold">{product.name}</h3>
-                <p className="text-sm text-gray-600">{product.category}</p>
-                <p className="text-xs text-gray-500">Stock: {product.stock}</p>
-              </div>
-              <p className="text-lg font-bold text-orange-600">${product.price.toLocaleString('es-CO')}</p>
-            </div>
-          ))}
+              className={`border rounded-lg p-3 flex justify-between items-center ${product.stock > 0
+                  ? 'cursor-pointer hover:bg-orange-50 border-gray-200'
+                  : "bg-gray-100 border-gray-300 opacity"} />))}
+          : 'bg-gray-100 border-gray-300 opacity-50'
+          }`}
+          >
+          <div>
+            <h3 className="font-semibold">{product.name}</h3>
+            <p className="text-sm text-gray-600">{product.category}</p>
+            <p className="text-xs text-gray-500">Stock: {product.stock}</p>
+          </div>
+          <p className="text-lg font-bold text-orange-600">${product.price.toLocaleString('es-CO')}</p>
         </div>
+        ))}
       </div>
-
-      {/* Carrito y Factura */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+    </div><div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">Carrito de Compras</h2>
-        
+
         <div className="mb-4">
           <label className="block text-sm font-semibold mb-2">Nombre del Cliente</label>
           <input
@@ -479,8 +682,7 @@ const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, upda
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
             placeholder="Cliente General"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-          />
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
         </div>
 
         <div className="space-y-3 mb-6 max-h-64 overflow-y-auto">
@@ -551,7 +753,6 @@ const BillingTab = ({ products, searchTerm, setSearchTerm, cart, addToCart, upda
   );
 };
 
-// Componente de Historial
 const HistoryTab = ({ invoices }) => {
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
